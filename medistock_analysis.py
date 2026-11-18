@@ -69,7 +69,13 @@ run_analysis("3. EXPIRY RISK ANALYSIS", """
 SELECT h.hospital_name, m.medicine_name,
        i.batch_number, i.stock_quantity,
        i.expiry_date,
-       DATEDIFF(i.expiry_date, CURDATE()) AS days_remaining
+       DATEDIFF(i.expiry_date, CURDATE()) AS days_remaining,
+       CASE
+           WHEN i.expiry_date < CURDATE() THEN 'Expired'
+           WHEN i.expiry_date <= DATE_ADD(CURDATE(), INTERVAL 90 DAY)
+               THEN 'Expiring Soon'
+           ELSE 'Safe'
+       END AS expiry_status
 FROM inventory i
 JOIN hospitals h ON i.hospital_id = h.hospital_id
 JOIN medicines m ON i.medicine_id = m.medicine_id
@@ -130,6 +136,7 @@ JOIN hospitals h ON i.hospital_id = h.hospital_id
 JOIN medicines m ON i.medicine_id = m.medicine_id
 JOIN suppliers s ON i.supplier_id = s.supplier_id
 WHERE i.stock_quantity < i.reorder_level
+  AND i.expiry_date > CURDATE()
 ORDER BY procurement_cost DESC;
 """)
 
@@ -146,6 +153,7 @@ FROM inventory i
 JOIN suppliers s ON i.supplier_id = s.supplier_id
 JOIN medicines m ON i.medicine_id = m.medicine_id
 WHERE i.stock_quantity < i.reorder_level
+  AND i.expiry_date > CURDATE()
 GROUP BY s.supplier_id, s.supplier_name,
          s.average_delivery_days
 ORDER BY procurement_cost DESC;
@@ -159,7 +167,11 @@ SELECT h.hospital_name, m.medicine_name,
        m.unit_price,
        (i.stock_quantity * m.unit_price) AS at_risk_value,
        i.expiry_date,
-       DATEDIFF(i.expiry_date, CURDATE()) AS days_remaining
+       DATEDIFF(i.expiry_date, CURDATE()) AS days_remaining,
+       CASE
+           WHEN i.expiry_date < CURDATE() THEN 'Expired'
+           ELSE 'Expiring Soon'
+       END AS expiry_status
 FROM inventory i
 JOIN hospitals h ON i.hospital_id = h.hospital_id
 JOIN medicines m ON i.medicine_id = m.medicine_id
@@ -179,19 +191,19 @@ SELECT h.hospital_name, m.medicine_name,
            ELSE 'Stock Available'
        END AS stock_status,
        CASE
-           WHEN DATEDIFF(i.expiry_date, CURDATE()) < 0
+           WHEN i.expiry_date < CURDATE()
                THEN 'Expired'
-           WHEN DATEDIFF(i.expiry_date, CURDATE()) <= 90
-               THEN 'Warning'
+           WHEN i.expiry_date <= DATE_ADD(CURDATE(), INTERVAL 90 DAY)
+               THEN 'Expiring Soon'
            ELSE 'Safe'
        END AS expiry_status,
        CASE
            WHEN i.stock_quantity < i.reorder_level
-                AND DATEDIFF(i.expiry_date, CURDATE()) <= 90
+                AND i.expiry_date <= DATE_ADD(CURDATE(), INTERVAL 90 DAY)
                THEN 'High Priority'
            WHEN i.stock_quantity < i.reorder_level
                THEN 'Reorder Required'
-           WHEN DATEDIFF(i.expiry_date, CURDATE()) <= 90
+           WHEN i.expiry_date <= DATE_ADD(CURDATE(), INTERVAL 90 DAY)
                THEN 'Expiry Attention'
            ELSE 'Normal'
        END AS overall_risk
@@ -200,6 +212,7 @@ JOIN hospitals h ON i.hospital_id = h.hospital_id
 JOIN medicines m ON i.medicine_id = m.medicine_id
 ORDER BY overall_risk, h.hospital_name;
 """)
+
 
 cursor.close()
 conn.close()
